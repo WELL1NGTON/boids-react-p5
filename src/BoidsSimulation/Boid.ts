@@ -1,141 +1,178 @@
-import Vector2 from './Vector2';
+import p5Types, { Color, Vector } from 'p5';
 
-interface IBoid {
-  pos: Vector2;
-  velocity: Vector2;
-  limits: Vector2;
-  perceptionRadius: number;
+interface Colour {
+  r: number;
+  g: number;
+  b: number;
 }
 
-class Boid {
-  pos: Vector2;
-  velocity: Vector2;
-  acceleration: Vector2;
-  limits: Vector2;
+export interface IBoid {
+  pos: Vector;
+  velocity: Vector;
+  colour: Colour;
+  acceleration: Vector;
+  size: number;
   perceptionRadius: number;
-  MAX_BIRDS_AWARENESS: number;
-  MAX_SPEED: number;
-  MAX_FORCE: number;
-  MAX_ACCELERATION: number;
+  boidsAwareness: number;
+}
 
-  constructor(pos?: Vector2, velocity?: Vector2, perceptionRadius?: number, limits?: Vector2, MAX_BIRDS_AWARENESS?: number, MAX_SPEED?: number) {
-    this.limits = limits || new Vector2({ x: 500, y: 500 });
-    const smallestLimit = this.limits.x < this.limits.y ? this.limits.x : this.limits?.y;
-    this.pos = pos || Vector2.random(0, smallestLimit);
-    this.velocity = velocity || Vector2.random(-1, 1);
+class Boid2 {
+  pos: Vector;
+  velocity: Vector;
+  acceleration: Vector;
+  colour: Colour;
+  size: number;
+  perceptionRadius: number;
+  boidsAwareness: number;
 
-    this.perceptionRadius = perceptionRadius || 30;
-
-    this.MAX_BIRDS_AWARENESS = MAX_BIRDS_AWARENESS || 7;
-    this.MAX_SPEED = MAX_SPEED || 2;
-    this.MAX_FORCE = 0.1;
-    this.MAX_ACCELERATION = 0.5;
-    this.acceleration = Vector2.random(1, this.MAX_ACCELERATION);
+  randomVector(min: number, max: number): Vector {
+    const vector: Vector = new Vector();
+    vector.x = Math.random() * (max - min) + min;
+    vector.y = Math.random() * (max - min) + min;
+    vector.z = Math.random() * (max - min) + min;
+    return vector;
   }
 
-  update(flock?: Boid[]) {
-    const alignmentMultiplier = 1;
-    const cohesionMultiplier = 2;
-    const separationMultiplier = 2;
+  constructor(boid?: IBoid) {
+    this.colour = (boid && boid.colour) || { r: 255, g: 255, b: 255 };
+    this.pos = (boid && boid.pos) || this.randomVector(0, 500);
+    this.velocity = (boid && boid.velocity) || this.randomVector(0, 1);
+    this.acceleration = (boid && boid.acceleration) || this.randomVector(0, 5);
+    this.perceptionRadius = (boid && boid.perceptionRadius) || 30;
+    this.size = (boid && boid.size) || 5;
+    this.boidsAwareness = (boid && boid.boidsAwareness) || 7;
+  }
+
+  update(
+    limits: Vector,
+    flock?: Boid2[],
+    alignmentMultiplier: number = 1,
+    cohesionMultiplier: number = 1,
+    separationMultiplier: number = 1,
+    maxSpeed: number = 2,
+    maxAcceleration: number = 0.5,
+    maxForce: number = 0.1
+  ) {
     if (flock) {
-      let alignmentValue = this.align(flock);
-      let cohesionValue = this.cohesion(flock);
-      let separationValue = this.separate(flock);
+      let alignmentValue: Vector = this.alignment(flock, maxSpeed, maxAcceleration, maxForce);
+      let cohesionValue: Vector = this.cohesion(flock, maxSpeed, maxAcceleration, maxForce);
+      let separationValue: Vector = this.separation(flock, maxSpeed, maxAcceleration, maxForce);
 
-      alignmentValue = Vector2.mult(alignmentValue, alignmentMultiplier);
-      cohesionValue = Vector2.mult(cohesionValue, cohesionMultiplier);
-      separationValue = Vector2.mult(separationValue, separationMultiplier);
+      alignmentValue = Vector.mult(alignmentValue, alignmentMultiplier);
+      cohesionValue = Vector.mult(cohesionValue, cohesionMultiplier);
+      separationValue = Vector.mult(separationValue, separationMultiplier);
 
-      this.acceleration = Vector2.add(this.acceleration, alignmentValue);
-      this.acceleration = Vector2.add(this.acceleration, cohesionValue);
-      this.acceleration = Vector2.add(this.acceleration, separationValue);
+      this.acceleration = Vector.add(this.acceleration, alignmentValue);
+      this.acceleration = Vector.add(this.acceleration, cohesionValue);
+      this.acceleration = Vector.add(this.acceleration, separationValue);
     }
 
-    this.pos = Vector2.add(this.pos, this.velocity);
-    this.velocity = Vector2.add(this.velocity, this.acceleration);
-    this.velocity = this.velocity.clamped(this.MAX_SPEED);
-    this.acceleration = Vector2.mult(this.acceleration, 0.5);
-    this.edges();
+    this.pos = Vector.add(this.pos, this.velocity);
+    this.velocity = Vector.add(this.velocity, this.acceleration);
+    this.velocity = this.velocity.limit(maxSpeed);
+    this.acceleration = Vector.mult(this.acceleration, 0.5);
+    this.edges(limits);
   }
 
-  align(flock: Boid[]) {
-    let steering = new Vector2();
+  separation(flock: Boid2[], maxSpeed: number, maxAcceleration: number, maxForce: number) {
+    let steering = new Vector();
     let total = 0;
+
     for (const boid of flock) {
       if (this !== boid) {
-        const isInPerceptionRadius = Vector2.distance(this.pos, boid.pos) <= this.perceptionRadius;
+        const isInPerceptionRadius = Vector.dist(this.pos, boid.pos) <= this.perceptionRadius;
         if (isInPerceptionRadius) {
-          steering = Vector2.add(steering, boid.velocity);
+          let diff = Vector.sub(this.pos, boid.pos);
+          const distance = Vector.dist(this.pos, boid.pos);
+          diff = Vector.div(diff, distance ** 2);
+          steering = Vector.add(steering, diff);
           total++;
-          if (total >= this.MAX_BIRDS_AWARENESS) break;
+          if (total >= this.boidsAwareness) break;
         }
       }
     }
+
     if (total > 0) {
-      steering = Vector2.div(steering, total);
-      steering = Vector2.mult(steering.normalized(), this.MAX_SPEED);
-      steering = Vector2.sub(steering, this.velocity);
-      steering = steering.clamped(this.MAX_FORCE);
+      steering = Vector.div(steering, total);
+      steering = Vector.mult(steering.normalize(), maxSpeed);
+      steering = Vector.sub(steering, this.velocity);
+      steering = steering.limit(maxForce);
     }
     return steering;
   }
 
-  separate(flock: Boid[]) {
-    let steering = new Vector2();
+  alignment(flock: Boid2[], maxSpeed: number, maxAcceleration: number, maxForce: number) {
+    let steering = new Vector();
     let total = 0;
     for (const boid of flock) {
       if (this !== boid) {
-        const isInPerceptionRadius = Vector2.distance(this.pos, boid.pos) <= this.perceptionRadius;
+        const isInPerceptionRadius = Vector.dist(this.pos, boid.pos) <= this.perceptionRadius;
         if (isInPerceptionRadius) {
-          let diff = Vector2.sub(this.pos, boid.pos);
-          const distance = Vector2.distance(this.pos, boid.pos);
-          diff = Vector2.div(diff, distance ** 2);
-          steering = Vector2.add(steering, diff);
+          steering = Vector.add(steering, boid.velocity);
           total++;
-          if (total >= this.MAX_BIRDS_AWARENESS) break;
+          if (total >= this.boidsAwareness) break;
         }
       }
     }
     if (total > 0) {
-      steering = Vector2.div(steering, total);
-      steering = Vector2.mult(steering.normalized(), this.MAX_SPEED);
-      steering = Vector2.sub(steering, this.velocity);
-      steering = steering.clamped(this.MAX_FORCE);
+      steering = Vector.div(steering, total);
+      steering = Vector.mult(steering.normalize(), maxSpeed);
+      steering = Vector.sub(steering, this.velocity);
+      steering = steering.limit(maxForce);
     }
     return steering;
   }
 
-  cohesion(flock: Boid[]) {
-    let steering = new Vector2();
+  cohesion(flock: Boid2[], maxSpeed: number, maxAcceleration: number, maxForce: number) {
+    let steering = new Vector();
     let total = 0;
     for (const boid of flock) {
       if (this !== boid) {
-        const isInPerceptionRadius = Vector2.distance(this.pos, boid.pos) <= this.perceptionRadius;
+        const isInPerceptionRadius = Vector.dist(this.pos, boid.pos) <= this.perceptionRadius;
         if (isInPerceptionRadius) {
-          steering = Vector2.add(steering, boid.pos);
+          steering = Vector.add(steering, boid.pos);
           total++;
-          if (total >= this.MAX_BIRDS_AWARENESS) break;
+          if (total >= this.boidsAwareness) break;
         }
       }
     }
     if (total > 0) {
-      steering = Vector2.div(steering, total);
-      // steering = Vector2.mult(steering.normalized(), this.MAX_SPEED);
-      steering = Vector2.sub(steering, this.pos);
-      steering = Vector2.mult(steering.normalized(), this.MAX_SPEED);
-      steering = Vector2.sub(steering, this.velocity);
-      steering = steering.clamped(this.MAX_FORCE);
+      steering = Vector.div(steering, total);
+      steering = Vector.sub(steering, this.pos);
+      steering = Vector.mult(steering.normalize(), maxSpeed);
+      steering = Vector.sub(steering, this.velocity);
+      steering = steering.limit(maxForce);
     }
     return steering;
   }
 
-  edges() {
-    if (this.pos.x > this.limits.x) this.pos.x = 0;
-    else if (this.pos.x < 0) this.pos.x = this.limits.x;
+  // randomColour(): Colour {
+  //   const colour: Colour = {
+  //     r: Math.floor(Math.random() * 255),
+  //     g: Math.floor(Math.random() * 255),
+  //     b: Math.floor(Math.random() * 255),
+  //   };
 
-    if (this.pos.y > this.limits.y) this.pos.y = 0;
-    else if (this.pos.y < 0) this.pos.y = this.limits.y;
+  //   return colour;
+  // }
+
+  draw(p5: p5Types) {
+    // this.colour = this.randomColour();
+    p5.stroke(this.colour.r, this.colour.g, this.colour.b);
+    p5.strokeWeight(this.size);
+    p5.point(this.pos.x, this.pos.y, this.pos.z);
+  }
+
+  edges(limits: Vector) {
+    if (this.pos.x > limits.x) this.pos.x = 0;
+    else if (this.pos.x < 0) this.pos.x = limits.x;
+
+    if (this.pos.y > limits.y) this.pos.y = 0;
+    else if (this.pos.y < 0) this.pos.y = limits.y;
+
+    if (this.pos.z > limits.z) this.pos.z = 0;
+    else if (this.pos.z < 0) this.pos.z = limits.z;
   }
 }
 
-export default Boid;
+export default Boid2;
